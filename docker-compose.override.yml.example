@@ -1,0 +1,7 @@
+# Solo para desarrollo/depuración local: renombra a docker-compose.override.yml.
+# Compose lo carga automáticamente y publica MySQL en el host.
+# En producción NO uses este archivo.
+services:
+  mysql:
+    ports:
+      - "127.0.0.1:3307:3306"

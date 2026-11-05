@@ -1,0 +1,82 @@
+name: ecommerce-docker
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?define MYSQL_ROOT_PASSWORD en .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?define MYSQL_DATABASE en .env}
+      MYSQL_USER: ${MYSQL_USER:?define MYSQL_USER en .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?define MYSQL_PASSWORD en .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    # Sin "ports": 3306 solo es alcanzable dentro de la red "data".
+    # Para depurar en local, usa docker-compose.override.yml (ver README).
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      APP_NAME: ${APP_NAME:-EcommerceAPI}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY:?define APP_KEY en .env}
+      APP_URL: ${APP_URL:-http://localhost:8000}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE}
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?define JWT_SECRET en .env}
+      STRIPE_SECRET: ${STRIPE_SECRET:-}
+      LOG_CHANNEL: stderr
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      RUN_SEEDERS: ${RUN_SEEDERS:-false}
+      RUN_SWAGGER_GENERATE: ${RUN_SWAGGER_GENERATE:-false}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [data, web]
+
+  api:
+    build:
+      context: ./nginx
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:80"
+    depends_on:
+      - backend
+    networks: [web]
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    environment:
+      # Dentro de Docker el frontend llega a la API por el nombre del servicio.
+      API_BASE_URL: ${FRONTEND_API_URL:-http://api/api}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - api
+    networks: [web]
+
+networks:
+  # "data" es interna: solo backend y mysql la comparten.
+  data:
+    internal: true
+  web: {}
+
+volumes:
+  mysql_data: {}
